@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -63,6 +63,44 @@ def test_database():
     response["database_name"] = "✅ Set" if os.getenv("DATABASE_NAME") else "❌ Not Set"
     
     return response
+
+# ----------------------------
+# Global Like Counter Endpoints
+# ----------------------------
+
+@app.get("/likes")
+def get_likes():
+    """Return the global like count (ensures a counter document exists)."""
+    try:
+        from database import db
+        if db is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+        col = db["like"]
+        doc = col.find_one({"key": "global"})
+        if not doc:
+            col.update_one({"key": "global"}, {"$setOnInsert": {"count": 0}}, upsert=True)
+            doc = col.find_one({"key": "global"})
+        return {"count": int(doc.get("count", 0))}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/likes/increment")
+def increment_likes():
+    """Atomically increment the global like count and return the new total."""
+    try:
+        from database import db
+        if db is None:
+            raise HTTPException(status_code=500, detail="Database not available")
+        col = db["like"]
+        col.update_one({"key": "global"}, {"$inc": {"count": 1}}, upsert=True)
+        doc = col.find_one({"key": "global"})
+        return {"count": int(doc.get("count", 0))}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
